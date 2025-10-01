@@ -1,8 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { ArrowUp, Square, Camera, Layout } from 'lucide-react';
-import { PromptInput, PromptInputAction, PromptInputActions, PromptInputTextarea } from '@/components/prompt-kit/prompt-input';
 import { Button } from '@/components/ui/button';
 import { SignInButton, SignUpButton, SignedIn, SignedOut, UserButton } from '@clerk/nextjs';
 

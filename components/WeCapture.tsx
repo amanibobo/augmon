@@ -5,6 +5,9 @@ import AROverlay from "./AROverlay";
 import { gltfManager } from "@/lib/gltf-manager";
 import { cardDatabase } from "@/lib/card-database";
 import { deckManager } from "@/lib/deck-manager";
+import { useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
+import { useUser } from "@clerk/nextjs";
 
 interface WebcamCaptureProps {
   onCardDetected?: (cardClass: string) => void;
@@ -17,6 +20,10 @@ export default function WebcamCapture({ onCardDetected }: WebcamCaptureProps = {
   const [detectedCards, setDetectedCards] = useState<string[]>([]);
   const [currentModel, setCurrentModel] = useState<string | null>(null);
   const [showAR, setShowAR] = useState(false);
+
+  // Convex hooks
+  const saveScannedCard = useMutation(api.scannedCards.saveScannedCard);
+  const { user } = useUser();
 
   // Test connection on component mount
   useEffect(() => {
@@ -76,6 +83,31 @@ export default function WebcamCapture({ onCardDetected }: WebcamCaptureProps = {
                   const success = deckManager.addCardToDeck(detectedCard);
                   if (success) {
                     console.log(`✅ Added ${detectedCard} to deck`);
+                    console.log(`Current deck size: ${deckManager.getDeckSize()} cards`);
+
+                    // Save to Convex if user is authenticated
+                    if (user?.id) {
+                      try {
+                        const cardInfo = cardDatabase.getCard(detectedCard);
+                        if (cardInfo) {
+                          saveScannedCard({
+                            cardName: cardInfo.name,
+                            cardId: cardInfo.id,
+                            type: cardInfo.type,
+                            hp: cardInfo.hp,
+                            rarity: cardInfo.rarity,
+                            description: cardInfo.description,
+                            imagePath: cardInfo.imagePath,
+                            userId: user.id,
+                          });
+                          console.log(`✅ Saved ${detectedCard} to Convex for user ${user.id}`);
+                        }
+                      } catch (error) {
+                        console.error(`❌ Failed to save ${detectedCard} to Convex:`, error);
+                      }
+                    } else {
+                      console.log(`⚠️ User not authenticated, skipping Convex save for ${detectedCard}`);
+                    }
                   } else {
                     console.log(`❌ Failed to add ${detectedCard} to deck`);
                   }

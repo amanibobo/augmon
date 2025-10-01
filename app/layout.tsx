@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Plus_Jakarta_Sans, Geist_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
+import { ConvexClientProvider } from "@/lib/convex-client";
 import "./globals.css";
 
 const plusJakarta = Plus_Jakarta_Sans({
@@ -25,14 +26,16 @@ export default function RootLayout({
 }>) {
   return (
     <ClerkProvider>
-      <html lang="en">
-        <body
-          className={`${plusJakarta.variable} ${geistMono.variable} antialiased`}
-          suppressHydrationWarning={true}
-        >
-          {children}
-        </body>
-      </html>
+      <ConvexClientProvider>
+        <html lang="en">
+          <body
+            className={`${plusJakarta.variable} ${geistMono.variable} antialiased`}
+            suppressHydrationWarning={true}
+          >
+            {children}
+          </body>
+        </html>
+      </ConvexClientProvider>
     </ClerkProvider>
   );
 }
