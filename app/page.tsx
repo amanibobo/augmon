@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { ArrowUp, Square, Camera, Layout } from 'lucide-react';
 import { PromptInput, PromptInputAction, PromptInputActions, PromptInputTextarea } from '@/components/prompt-kit/prompt-input';
 import { Button } from '@/components/ui/button';
+import { SignInButton, SignUpButton, SignedIn, SignedOut, UserButton } from '@clerk/nextjs';
 
 
 export default function Home() {
@@ -48,18 +49,19 @@ export default function Home() {
             
             {/* Action Buttons */}
             <div className="flex items-center gap-3">
-              <a
-                href="/canvas"
-                className="px-4 py-2 rounded-full border border-white/20 text-white font-medium hover:bg-white/10 transition-colors"
-              >
-                Sign in
-              </a>
-              <a
-                href="/canvas"
-                className="px-4 py-2 rounded-full bg-white text-[#13120A] font-medium hover:bg-white/90 transition-colors"
-              >
-                Download
-              </a>
+              <SignedOut>
+                <SignInButton className="px-4 py-2 rounded-full border border-white/20 text-white font-medium hover:bg-white/10 transition-colors" />
+                <SignUpButton className="px-4 py-2 rounded-full bg-white text-[#13120A] font-medium hover:bg-white/90 transition-colors" />
+              </SignedOut>
+              <SignedIn>
+                <UserButton afterSignOutUrl="/" />
+                <a
+                  href="/canvas"
+                  className="px-4 py-2 rounded-full bg-white text-[#13120A] font-medium hover:bg-white/90 transition-colors"
+                >
+                  Canvas
+                </a>
+              </SignedIn>
             </div>
           </div>
         </div>

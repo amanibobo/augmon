@@ -2,11 +2,11 @@
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { 
-  Home, 
-  Camera, 
-  Package, 
-  Search, 
+import {
+  Home,
+  Camera,
+  Package,
+  Search,
   MessageSquare,
   Settings,
   Menu,
@@ -101,9 +101,7 @@ export function Sidebar({
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-200">
         {!isCollapsed && (
-          <div className="">
-            <span className="font-semibold text-gray-900">augmon</span>
-          </div>
+          <span className="font-semibold text-gray-900">augmon</span>
         )}
         <Button
           variant="ghost"
