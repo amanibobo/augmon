@@ -32,6 +32,7 @@ import { ListPlus, GitBranch, DotsSix } from '@phosphor-icons/react';
 import WebcamCapture from '@/components/WeCapture';
 import DeckDisplay from '@/components/DeckDisplay';
 import { deckManager } from '@/lib/deck-manager';
+import { cardDatabase } from '@/lib/card-database';
 import { Sidebar } from '@/components/ui/sidebar';
 import { DeckSidebar } from '@/components/ui/deck-sidebar';
 import { ScannerSidebar } from '@/components/ui/scanner-sidebar';
@@ -533,7 +534,6 @@ export default function CanvasPage() {
     
     const data = chatNode.data as ChatNodeData;
     const selectedModel = data.selectedModel || 'gemini-2.5-flash';
-    const linkedNodeIds = data.linkedNodeIds || [];
     
     // append user message to that node's data
     setNodes((nds) => nds.map((n) => {
@@ -545,18 +545,93 @@ export default function CanvasPage() {
     }));
 
     try {
-      // Get context from linked nodes
-      const linkedNodes = nodes.filter(n => linkedNodeIds.includes(n.id));
+      // Get context from linked nodes by checking edges
+      const linkedNodes = nodes.filter(n => {
+        return edges.some(edge =>
+          (edge.source === nodeId && edge.target === n.id) ||
+          (edge.target === nodeId && edge.source === n.id)
+        );
+      });
       const context = linkedNodes.map(n => n.data.label || n.id);
-      
+
+      // Extract connected card information from database
+      const connectedCards = linkedNodes
+        .filter(n => n.type === 'card')
+        .map(n => {
+          const cardName = n.data.cardName;
+          if (cardName) {
+            // Try to get full card data from database
+            const cardInfo = cardDatabase.getCard(cardName);
+            return {
+              nodeId: n.id,
+              cardName: cardName,
+              cardInfo: cardInfo,
+              label: n.data.label
+            };
+          }
+          return null;
+        })
+        .filter(card => card !== null);
+
+      console.log(`Found ${connectedCards.length} connected cards for chat ${nodeId}:`, connectedCards);
+
       // Check if this is a Pokémon-related query first
       const isPokemonQuery = geminiService.isPokemonQuery(text);
-      
+
       let response: string;
+
+      // Handle questions about connected cards first
+      if (text.toLowerCase().includes('connected') ||
+          text.toLowerCase().includes('what card') ||
+          text.toLowerCase().includes('which card') ||
+          text.toLowerCase().includes('card connected')) {
+
+        if (connectedCards.length === 0) {
+          response = "No cards are currently connected to this chat. Try connecting a card node to this chat node by dragging an edge between them.";
+        } else if (connectedCards.length === 1) {
+          const card = connectedCards[0];
+          if (card.cardInfo) {
+            response = `The card **${card.cardInfo.name}** is connected to this chat.
+
+**Card Details:**
+- **Type:** ${card.cardInfo.type}
+- **HP:** ${card.cardInfo.hp || 'N/A'}
+- **Rarity:** ${card.cardInfo.rarity}
+- **Description:** ${card.cardInfo.description || 'No description available'}
+
+You can ask me questions about this card or compare it with others!`;
+          } else {
+            response = `A card is connected but I don't have detailed information about it.`;
+          }
+        } else {
+          const cardDetails = connectedCards.map((card, index) => {
+            if (card.cardInfo) {
+              return `${index + 1}. **${card.cardInfo.name}** (${card.cardInfo.type}, HP: ${card.cardInfo.hp || 'N/A'})`;
+            }
+            return `${index + 1}. Unknown card`;
+          }).join('\n');
+
+          response = `${connectedCards.length} cards are connected to this chat:
+
+${cardDetails}
+
+Ask me about any of these cards or request comparisons!`;
+        }
+      }
       
       if (isPokemonQuery) {
         // Use the Mastra Pokémon agent for Pokémon-related queries
-        const pokemonResult = await getPokemonResponse(text);
+        // Enhance the query with connected card context
+        let enhancedQuery = text;
+        if (connectedCards.length > 0) {
+          const cardContext = connectedCards
+            .filter(card => card.cardInfo)
+            .map(card => `${card.cardInfo!.name} (${card.cardInfo!.type}, HP: ${card.cardInfo!.hp || 'N/A'})`)
+            .join(', ');
+          enhancedQuery = `${text}\n\nConnected cards context: ${cardContext}`;
+        }
+
+        const pokemonResult = await getPokemonResponse(enhancedQuery);
         if (pokemonResult.success) {
           response = pokemonResult.response;
           
@@ -585,10 +660,22 @@ export default function CanvasPage() {
           response = await geminiService.generateContent(text, selectedModel);
         }
       } else if (text.toLowerCase().includes('battle') || text.toLowerCase().includes('vs') || text.toLowerCase().includes('fight')) {
-        // Battle simulation
-        const cardNames = linkedNodes.slice(0, 2).map(n => n.data.label || n.id);
-        if (cardNames.length >= 2) {
-          response = await geminiService.generateBattleSimulation(cardNames[0], cardNames[1], selectedModel);
+        // Battle simulation with connected cards
+        if (connectedCards.length >= 2) {
+          const card1 = connectedCards[0].cardInfo;
+          const card2 = connectedCards[1].cardInfo;
+          if (card1 && card2) {
+            response = await geminiService.generateBattleSimulation(
+              `${card1.name} (${card1.type}, HP: ${card1.hp || 'N/A'})`,
+              `${card2.name} (${card2.type}, HP: ${card2.hp || 'N/A'})`,
+              selectedModel
+            );
+          } else {
+            response = await geminiService.generateContent(
+              `Simulate a battle based on this request: ${text}. Connected cards: ${connectedCards.map(c => c.cardName).join(', ')}`,
+              selectedModel
+            );
+          }
         } else {
           response = await geminiService.generateContent(
             `Simulate a battle based on this request: ${text}. Context: ${context.join(', ')}`,
@@ -596,10 +683,23 @@ export default function CanvasPage() {
           );
         }
       } else if (text.toLowerCase().includes('optimize') || text.toLowerCase().includes('deck')) {
-        // Deck optimization
-        response = await geminiService.generateDeckOptimization(context, selectedModel);
+        // Deck optimization with connected cards
+        const cardContext = connectedCards
+          .filter(card => card.cardInfo)
+          .map(card => `${card.cardInfo!.name} (${card.cardInfo!.type}, HP: ${card.cardInfo!.hp || 'N/A'}, Rarity: ${card.cardInfo!.rarity})`)
+          .join(', ');
+        response = await geminiService.generateDeckOptimization([...context, cardContext], selectedModel);
+      } else if (connectedCards.length > 0) {
+        // Card analysis with connected card database context
+        const detailedContext = connectedCards
+          .filter(card => card.cardInfo)
+          .map(card => {
+            const info = card.cardInfo!;
+            return `${info.name}: Type=${info.type}, HP=${info.hp || 'N/A'}, Rarity=${info.rarity}, Description=${info.description || 'N/A'}`;
+          });
+        response = await geminiService.generateCardAnalysis(text, detailedContext, selectedModel);
       } else if (context.length > 0) {
-        // Card analysis with context
+        // Card analysis with basic context
         response = await geminiService.generateCardAnalysis(text, context, selectedModel);
       } else {
         // General chat

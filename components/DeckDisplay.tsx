@@ -3,6 +3,9 @@
 import { useState, useEffect } from 'react';
 import { DeckCard, deckManager } from '@/lib/deck-manager';
 import { Trash2, Grid3X3 } from 'lucide-react';
+import { useMutation, useQuery } from 'convex/react';
+import { api } from '@/convex/_generated/api';
+import { useUser } from '@clerk/nextjs';
 
 interface DeckDisplayProps {
   className?: string;
@@ -11,32 +14,82 @@ interface DeckDisplayProps {
 
 export default function DeckDisplay({ className = "", onAddCardToCanvas }: DeckDisplayProps) {
   const [deck, setDeck] = useState<DeckCard[]>([]);
+  const [selectedCard, setSelectedCard] = useState<DeckCard | null>(null);
 
-  // Update deck when component mounts or when deck changes
+  // Convex hooks
+  const deleteScannedCard = useMutation(api.scannedCards.deleteScannedCard);
+  const { user } = useUser();
+
+  // Get all scanned cards for the current user
+  const scannedCards = useQuery(api.scannedCards.getScannedCards, user?.id ? { userId: user.id } : "skip");
+
+  // Update deck when component mounts or when deck/scanned cards change
   useEffect(() => {
     const updateDeck = () => {
+      if (user?.id && scannedCards) {
+        // For authenticated users, load from Convex data
+        deckManager.setUserId(user.id);
+        deckManager.loadDeckFromConvex(scannedCards);
+      }
       setDeck(deckManager.getDeck());
     };
-    
+
     updateDeck();
-    
+
     // Set up interval to check for deck changes
     const interval = setInterval(updateDeck, 1000);
-    
-    return () => clearInterval(interval);
-  }, []);
 
-  const handleRemoveCard = (cardName: string) => {
+    return () => clearInterval(interval);
+  }, [user?.id, scannedCards]);
+
+  const handleRemoveCard = async (cardName: string) => {
     const quantity = deckManager.getCardQuantity(cardName);
     deckManager.removeCardFromDeck(cardName, quantity);
     setDeck(deckManager.getDeck());
+
+    // Also delete from Convex database if user is authenticated
+    if (user?.id && scannedCards) {
+      try {
+        // Find the scanned card in the query result
+        const scannedCard = scannedCards.find(card => card.cardName.toLowerCase() === cardName.toLowerCase());
+        if (scannedCard) {
+          await deleteScannedCard({ cardId: scannedCard._id });
+          console.log(`✅ Deleted ${cardName} from Convex database`);
+        } else {
+          console.log(`⚠️ Card ${cardName} not found in Convex database`);
+        }
+      } catch (error) {
+        console.error(`❌ Failed to delete ${cardName} from Convex:`, error);
+      }
+    } else {
+      console.log(`⚠️ User not authenticated or no scanned cards data, skipping Convex deletion for ${cardName}`);
+    }
   };
 
-  const handleClearDeck = () => {
+  const handleClearDeck = async () => {
     if (confirm('Are you sure you want to clear the entire deck?')) {
       deckManager.clearDeck();
       setDeck([]);
+
+      // Also delete all scanned cards from Convex database if user is authenticated
+      if (user?.id && scannedCards) {
+        try {
+          // Delete all scanned cards for this user
+          await Promise.all(
+            scannedCards.map(card => deleteScannedCard({ cardId: card._id }))
+          );
+          console.log(`✅ Deleted all ${scannedCards.length} cards from Convex database`);
+        } catch (error) {
+          console.error(`❌ Failed to delete cards from Convex:`, error);
+        }
+      } else {
+        console.log(`⚠️ User not authenticated or no scanned cards data, skipping Convex deletion`);
+      }
     }
+  };
+
+  const handleViewCard = (card: DeckCard) => {
+    setSelectedCard(card);
   };
 
   return (
@@ -129,6 +182,63 @@ export default function DeckDisplay({ className = "", onAddCardToCanvas }: DeckD
           </div>
         )}
       </div>
+
+      {/* Card Details Modal */}
+      {selectedCard && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-semibold text-gray-900">{selectedCard.name}</h3>
+                <button
+                  onClick={() => setSelectedCard(null)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex justify-center">
+                  <img
+                    src={selectedCard.imagePath}
+                    alt={selectedCard.name}
+                    className="w-48 h-auto rounded-lg border border-gray-300"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <span className="text-sm font-medium text-gray-500">Type</span>
+                    <p className="text-lg font-semibold text-gray-900">{selectedCard.type}</p>
+                  </div>
+                  <div>
+                    <span className="text-sm font-medium text-gray-500">HP</span>
+                    <p className="text-lg font-semibold text-gray-900">{selectedCard.hp || 'N/A'}</p>
+                  </div>
+                  <div>
+                    <span className="text-sm font-medium text-gray-500">Rarity</span>
+                    <p className="text-lg font-semibold text-gray-900 capitalize">{selectedCard.rarity}</p>
+                  </div>
+                  <div>
+                    <span className="text-sm font-medium text-gray-500">Quantity</span>
+                    <p className="text-lg font-semibold text-gray-900">{selectedCard.quantity}</p>
+                  </div>
+                </div>
+
+                {selectedCard.description && (
+                  <div>
+                    <span className="text-sm font-medium text-gray-500">Description</span>
+                    <p className="text-sm text-gray-700 mt-1">{selectedCard.description}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

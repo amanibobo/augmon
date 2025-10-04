@@ -25,6 +25,11 @@ export default function WebcamCapture({ onCardDetected }: WebcamCaptureProps = {
   const saveScannedCard = useMutation(api.scannedCards.saveScannedCard);
   const { user } = useUser();
 
+  // Set user ID in deck manager when user changes
+  useEffect(() => {
+    deckManager.setUserId(user?.id || null);
+  }, [user?.id]);
+
   // Test connection on component mount
   useEffect(() => {
     const testConnection = async () => {

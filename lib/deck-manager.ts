@@ -13,6 +13,7 @@ export interface DeckCard extends CardInfo {
 export class DeckManager {
   private static instance: DeckManager;
   private deck: DeckCard[] = [];
+  private userId: string | null = null;
 
   private constructor() {}
 
@@ -21,6 +22,56 @@ export class DeckManager {
       DeckManager.instance = new DeckManager();
     }
     return DeckManager.instance;
+  }
+
+  /**
+   * Set the current user ID for Convex operations
+   */
+  public setUserId(userId: string | null): void {
+    this.userId = userId;
+  }
+
+  /**
+   * Load deck from Convex data (for authenticated users)
+   */
+  public loadDeckFromConvex(scannedCards: Array<{
+    cardId: string;
+    cardName: string;
+    type: string;
+    hp?: number;
+    rarity: string;
+    description?: string;
+    imagePath: string;
+    scannedAt: number;
+  }>): void {
+    if (this.userId && scannedCards.length > 0) {
+      // Convert Convex data to DeckCard format
+      this.deck = scannedCards.map(scannedCard => ({
+        id: scannedCard.cardId,
+        name: scannedCard.cardName,
+        type: scannedCard.type,
+        hp: scannedCard.hp,
+        rarity: scannedCard.rarity as 'common' | 'uncommon' | 'rare' | 'holo' | 'ultra',
+        description: scannedCard.description,
+        imagePath: scannedCard.imagePath,
+        quantity: 1, // Convex stores individual records, so each is quantity 1
+        dateAdded: new Date(scannedCard.scannedAt)
+      }));
+
+      // Group by card name and sum quantities
+      const grouped = new Map<string, DeckCard>();
+      this.deck.forEach(card => {
+        const existing = grouped.get(card.name.toLowerCase());
+        if (existing) {
+          existing.quantity += 1;
+        } else {
+          grouped.set(card.name.toLowerCase(), { ...card });
+        }
+      });
+
+      this.deck = Array.from(grouped.values());
+      console.log(`Loaded ${this.deck.length} cards from Convex for user ${this.userId}`);
+    }
   }
 
   /**
